@@ -1,0 +1,12 @@
+{
+  "name": "chrometaphore",
+  "description": "Tools by chrometaphore.com",
+  "owner": { "name": "chrometaphore", "url": "https://chrometaphore.com" },
+  "plugins": [
+    {
+      "name": "sumi",
+      "source": "./",
+      "description": "Point Claude at the things you want to fix: visual notes on your web page, with exact DOM and source context."
+    }
+  ]
+}

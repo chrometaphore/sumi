@@ -1,0 +1,4 @@
+#!/bin/sh
+# Sumi CLI, on PATH while the plugin is installed (plugin bin/ folder).
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec node "$DIR/../dist/cli.js" "$@"

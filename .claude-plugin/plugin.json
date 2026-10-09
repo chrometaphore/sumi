@@ -1,0 +1,28 @@
+{
+  "name": "sumi",
+  "version": "1.0.0",
+  "description": "Point Claude at the things you want to fix. Pin, mark or brush over your web page, add a few words, and Sumi hands Claude the exact elements and source behind each note.",
+  "author": {
+    "name": "chrometaphore",
+    "url": "https://chrometaphore.com"
+  },
+  "homepage": "https://github.com/chrometaphore/sumi",
+  "repository": "https://github.com/chrometaphore/sumi",
+  "license": "MIT",
+  "keywords": [
+    "visual-review",
+    "annotation",
+    "feedback",
+    "design-review",
+    "mcp"
+  ],
+  "mcpServers": {
+    "sumi": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/cli.js",
+        "mcp"
+      ]
+    }
+  }
+}

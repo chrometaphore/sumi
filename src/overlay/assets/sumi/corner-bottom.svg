@@ -1,0 +1,6 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+<foreignObject x="-48" y="-48" width="136" height="136"><div xmlns="http://www.w3.org/1999/xhtml" style="backdrop-filter:blur(24px);clip-path:url(#bgblur_0_0_4_clip_path);height:100%;width:100%"></div></foreignObject><path id="Subtract" data-figma-bg-blur-radius="48" d="M40 0V40H39.9922C39.9957 39.7844 40 39.568 40 39.3516C39.9998 17.6183 22.3818 0 0.648438 0C0.431865 5.54763e-07 0.215742 0.00432627 0 0.0078125V0H40Z" fill="black"/>
+<defs>
+<clipPath id="bgblur_0_0_4_clip_path" transform="translate(48 48)"><path d="M40 0V40H39.9922C39.9957 39.7844 40 39.568 40 39.3516C39.9998 17.6183 22.3818 0 0.648438 0C0.431865 5.54763e-07 0.215742 0.00432627 0 0.0078125V0H40Z"/>
+</clipPath></defs>
+</svg>

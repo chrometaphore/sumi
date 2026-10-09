@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+.sumi/
+*.log
+npm-debug.log*
+.env*
+*.tgz
+.vscode/
+.idea/
