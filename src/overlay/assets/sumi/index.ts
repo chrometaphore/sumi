@@ -2,8 +2,7 @@
  * Sumi UI icons, exported unmodified from the Sumi design file and bundled as markup (scripts/build.mjs
  * loads .svg as text). icons.ts parses them into inline SVG, so a page CSP with a strict `img-src`
  * cannot block them; state colours come from CSS filters rather than edits to the files. Intrinsic
- * sizes are noted per asset. corner-top/bottom.svg are the fillet geometry the dock draws in code
- * (ink.ts `dockOutline`); they are kept as the design reference and not bundled.
+ * sizes are noted per asset.
  */
 import brush from "./brush.svg"; // 20×20, stroke #999
 import close from "./close.svg"; // 20×20, stroke #BBB

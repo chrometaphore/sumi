@@ -6,7 +6,7 @@ import { captureElement, captureRegion, captureStroke, pageInfo } from "./contex
 import { createGlow, type Glow } from "./glow";
 import { ICONS, sumiSvg, type SumiIconName } from "./icons";
 import { staticFlag, startLive, stopLive } from "./live";
-import { createInkDock, createInkSkin, DROP, FILLET, INK_LOADING, inkShutdown, TAB_H, TAB_W, type InkDock, type InkDockChange, type InkSkin, type Point } from "./ink";
+import { createInkDock, createInkSkin, DROP, DROP_INSET, INK_LOADING, inkShutdown, TAB_H, TAB_INSET, TAB_W, type InkDock, type InkDockChange, type InkSkin, type Point } from "./ink";
 import { Marquee, type ViewRect } from "./marquee";
 import { elementAt, forwardWheel, Picker, tagLabel } from "./picker";
 import { refineSources } from "./sourcemap";
@@ -789,7 +789,6 @@ export class SumiApp {
       },
       [sumiIcon("more")]
     );
-    this.addTip(more, () => ({ label: "More", sub: this.connected ? undefined : "offline" }));
 
     const close = h(
       "button",
@@ -800,7 +799,6 @@ export class SumiApp {
       },
       [sumiIcon("close")]
     );
-    this.addTip(close, () => ({ label: "Minimize", key: "Esc" }));
 
     const col = h("div", { class: "dock-col", attrs: { role: "toolbar", "aria-label": "Sumi", "aria-orientation": "vertical" } }, [
       h("div", { class: "dock-tools" }, [tools.pin, tools.marquee, tools.brush]),
@@ -846,7 +844,7 @@ export class SumiApp {
   private tabRect(): { left: number; top: number } {
     const r = safe(() => this.dock.content.getBoundingClientRect(), null);
     if (r && r.width > 0 && r.height > 0) return { left: r.left, top: r.top };
-    return { left: viewW() - TAB_W, top: window.innerHeight / 2 - TAB_H / 2 };
+    return { left: viewW() - TAB_INSET - TAB_W, top: window.innerHeight / 2 - TAB_H / 2 };
   }
 
   /** Collapse back to the drop. Closes everything that hangs off the dock first. */
@@ -914,19 +912,18 @@ export class SumiApp {
   }
 
   /**
-   * Where pins must not sit: the dock's footprint (the open tab with its fillets, or the closed drop
-   * with its rippling edge), so a click on a badge can never land on a dock button. Mirrors the
-   * dock's fit-to-viewport scale (ink.ts `fit`).
+   * Where pins must not sit: the dock's footprint (the floating open tab, or the closed drop with its
+   * rippling edge), so a click on a badge can never land on a dock button. Mirrors the dock's
+   * fit-to-viewport scale (ink.ts `fit`, anchored on the viewport's right edge).
    */
   private dockZone(vw: number, vh: number): { left: number; top: number; bottom: number } {
-    const dockH = TAB_H + 2 * FILLET;
-    const k = vh >= 100 ? Math.min(1, (vh - 16) / dockH) : 1;
+    const k = vh >= 100 ? Math.min(1, (vh - 16) / TAB_H) : 1;
     if (this.dock.isOpen) {
-      const half = (dockH * k) / 2;
-      return { left: vw - TAB_W * k, top: vh / 2 - half, bottom: vh / 2 + half };
+      const half = ((TAB_H + 16) * k) / 2;
+      return { left: vw - (TAB_INSET + TAB_W + 8) * k, top: vh / 2 - half, bottom: vh / 2 + half };
     }
     const r = (DROP / 2 + 8) * k;
-    const cx = vw - 36 * k; // the drop sits on the tool column's axis, 36px from the edge
+    const cx = vw - (DROP_INSET + DROP / 2) * k; // the drop's centre, DROP_INSET px off the edge
     return { left: cx - r, top: vh / 2 - r, bottom: vh / 2 + r };
   }
 
@@ -2110,7 +2107,7 @@ export class SumiApp {
     const ht = (box ? box.height : p.el.offsetHeight) || 220;
     const M = 12;
     // Keep clear of the dock on the right edge (open tab, or the closed drop).
-    const rightLimit = vw - (this.dock.isOpen ? TAB_W : DROP + 10) - M;
+    const rightLimit = vw - (this.dock.isOpen ? TAB_INSET + TAB_W : DROP_INSET + DROP) - M;
     const bottomLimit = vh - M;
     let x: number;
     let y: number;

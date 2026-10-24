@@ -57,9 +57,9 @@ export const INK_WAVES = {
   spacing: 3.5,
   /** Maximum samples per outline (performance cap for tall panels). */
   maxSamples: 360,
-  /** Extra damping (1/s) where the dock's outline runs off-screen: ripples leave, they don't bounce. */
+  /** Extra damping (1/s) along an outline's `fixed` stretches: ripples leave, they don't bounce. */
   sponge: 40,
-  /** Length (px) over which the dock's ink goes from pinned (at the viewport edge) to free. */
+  /** Length (px) over which an outline goes from pinned (next to a `fixed` stretch) to free. */
   edgeRamp: 14,
   /** A surface stops animating once every displacement is below this (px) and no pointer is near. */
   sleep: 0.03,
@@ -214,8 +214,12 @@ export const INK_LOADING = {
   spinReducedMs: 0, // reduced motion: a still arc
 };
 
-/** The open dock's tab (72 × 312, with 40 px fillets above and below) and the closed drop's diameter. */
+/** The open dock's tab (72 × 298, corner radius 24), floating `TAB_INSET` px off the viewport's right
+ * edge, and the closed drop (52 × 52, corner radius 16), `DROP_INSET` px off it. */
 export const TAB_W = 72;
-export const TAB_H = 312;
-export const FILLET = 40;
+export const TAB_H = 298;
+export const TAB_R = 24;
+export const TAB_INSET = 16;
 export const DROP = 52;
+export const DROP_R = 16;
+export const DROP_INSET = 12;

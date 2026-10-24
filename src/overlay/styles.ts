@@ -1,12 +1,13 @@
 /** All overlay CSS. Lives inside the shadow root, isolated from the page. Sumi chrome is always ink. */
-import { DROP, TAB_H, TAB_W } from "./ink";
+import { DROP, DROP_INSET, TAB_H, TAB_INSET, TAB_W } from "./ink";
 
 /** Gap between the dock's ink and the surfaces that emerge to its left (menu, hint, toasts). */
 export const GAP = 10;
 /** Tooltips sit a little closer to the dock than the menu and hint do. */
 export const TIP_GAP = 6;
-const SIDE = TAB_W + GAP; // right offset of tooltips, hint, menu, toasts
-const SIDE_CLOSED = DROP + GAP + 10; // the closed drop sits 10px off the edge
+const DOCK = TAB_INSET + TAB_W; // the floating tab's left edge, from the viewport's right edge
+const SIDE = DOCK + GAP; // right offset of the toasts (tooltips, hint and menu measure the tab)
+const SIDE_CLOSED = DROP_INSET + DROP + GAP; // the closed drop sits DROP_INSET px off the edge
 
 /** The dock's tool column: top inset in the tab, padding, and one 40 px row per tool. */
 const TOOLS_TOP = 16;
@@ -134,8 +135,11 @@ svg { display: block; flex: none; }
 .dock-col { position: absolute; inset: 0; }
 .dock-tools { position: absolute; left: 16px; top: ${TOOLS_TOP}px; width: ${ROW}px; padding: ${TOOLS_PAD}px 0; display: flex; flex-direction: column; }
 .dk-send { position: absolute; left: 16px; top: 152px; }
-.dock-sec { position: absolute; left: 16px; top: 208px; width: 40px; padding: 4px 0; display: flex; flex-direction: column;
-  border-radius: 100px; background: var(--ink-2); }
+/* More / Close: 28 px buttons in a padded group; hover (and the open More menu) is a faint fill, no icon change */
+.dock-sec { position: absolute; left: 16px; top: 208px; width: 40px; padding: 6px; display: flex; flex-direction: column; gap: 6px;
+  border-radius: 16px; background: var(--ink-2); overflow: hidden; }
+.dock-sec .dk { width: 28px; height: 28px; border-radius: 10px; }
+.dock-sec .dk::before { inset: 0; border-radius: 10px; background: rgba(255, 255, 255, .05); }
 .dk { position: relative; width: ${ROW}px; height: ${ROW}px; display: grid; place-items: center; border-radius: 50%; color: #fff; }
 .dk::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: rgba(255, 255, 255, .07); opacity: 0; transition: opacity .15s; }
 .dk:hover::before, .dk[aria-expanded="true"]::before { opacity: 1; }
@@ -149,16 +153,15 @@ svg { display: block; flex: none; }
 .si > svg.si-pin { left: -13.333%; top: -25.833%; width: 126.667%; height: 151.667%; }
 .dk:active .si { transform: scale(.9); }
 /* Idle colours follow the Figma assets: tools #999 (the white pin dimmed by brightness(.6)), More /
- * Close #BBB. Hover (and the open More menu) lightens both to #CCC / #DDD; the selected tool is white + glow. */
+ * Close #BBB. Hover lightens the tools to #CCC (More / Close keep #BBB); the selected tool is white + glow. */
 .dk svg.si-pin { filter: brightness(.6); }
 .dk:hover svg.si-pin { filter: brightness(.8); }
 .dk.on svg.si-pin { filter: none; }
 .dk:hover svg:not(.si-pin):not(.si-soft) { filter: brightness(1.3333); }
-.dk:hover svg.si-soft, .dk[aria-expanded="true"] svg.si-soft { filter: brightness(1.1765); }
 .dk.on svg:not(.si-pin) { filter: brightness(0) invert(1) drop-shadow(0 0 6px rgba(255, 255, 255, .45)); }
-.dk-send { width: 40px; height: 40px; border-radius: 50%; display: block; }
+.dk-send { width: 40px; height: 40px; border-radius: 16px; display: block; }
 .dk-send:focus-visible { outline-offset: 3px; }
-.dk-pill { position: absolute; inset: 0; border-radius: 50%; display: grid; place-items: center;
+.dk-pill { position: absolute; inset: 0; border-radius: 16px; display: grid; place-items: center;
   border: 2px solid #fff; background: linear-gradient(to bottom, #fff 50%, rgba(255, 255, 255, .9) 97.5%);
   box-shadow: 0 0 12px rgba(255, 255, 255, .35); transition: box-shadow .2s, border-color .2s, background .2s, transform .15s var(--ease); }
 .dk-pill svg { width: 20px; height: 20px; display: block; transform: scaleX(-1); transition: filter .2s; }
@@ -279,8 +282,8 @@ textarea:focus-visible { outline: none; }
 .reply .you { display: block; margin-top: 6px; color: var(--mute); }
 
 /* notes panel: left of the dock, vertically centred on it */
-.panel { position: fixed; z-index: 7; right: ${TAB_W + 12}px; top: 0; bottom: 0; margin: auto 0; height: fit-content;
-  width: min(360px, calc(100vw - ${TAB_W + 24}px)); max-height: 70vh; display: flex; flex-direction: column; border-radius: 22px; }
+.panel { position: fixed; z-index: 7; right: ${DOCK + 12}px; top: 0; bottom: 0; margin: auto 0; height: fit-content;
+  width: min(360px, calc(100vw - ${DOCK + 24}px)); max-height: 70vh; display: flex; flex-direction: column; border-radius: 22px; }
 .panel-h { display: flex; align-items: center; gap: 8px; padding: 14px 12px 8px 18px; }
 .panel-h .ttl { font-weight: 600; flex: 1; color: #fff; }
 .panel-h .ttl span { color: var(--mute); font-weight: 400; margin-left: 6px; font-variant-numeric: tabular-nums; }
@@ -314,7 +317,7 @@ textarea:focus-visible { outline: none; }
 .toasts { position: fixed; z-index: 13; right: ${SIDE}px; bottom: calc(50% - ${TAB_H / 2}px); display: flex; flex-direction: column; align-items: flex-end;
   gap: 6px; pointer-events: none; }
 .dp:not(.dock-open) .toasts { right: ${SIDE_CLOSED}px; bottom: calc(50% - ${DROP / 2}px); }
-.dp.panel-open .toasts { right: calc(${TAB_W + 12}px + min(360px, 100vw - ${TAB_W + 24}px) + 10px); }
+.dp.panel-open .toasts { right: calc(${DOCK + 12}px + min(360px, 100vw - ${DOCK + 24}px) + 10px); }
 .dp.menu-open .toasts { right: ${SIDE + 236 + 10}px; }
 .toast { height: 34px; padding: 0 15px 0 12px; border-radius: 17px; font-size: 12.5px; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
 .toast svg { width: 14px; height: 14px; color: var(--green); }

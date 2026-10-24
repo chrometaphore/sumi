@@ -6,9 +6,8 @@
  *   <svg>, grouped under a gooey metaball filter (feTurbulence → feDisplacementMap → feGaussianBlur
  *   → feColorMatrix alpha threshold) and animated per frame from a small spring integrator. The
  *   filter is ramped to identity and removed once the morph settles.
- * - Surface (both rest states, hover): ONE procedural outline per state — the open tab with its two
- *   concave fillets (the exact geometry of corner-top/bottom.svg, now drawn in code), or the closed
- *   drop's circle — rendered through a 1D damped wave field that runs along the whole outline
+ * - Surface (both rest states, hover): ONE procedural outline per state — the open tab's rounded
+ *   rect, or the closed drop's rounded square — rendered through a 1D damped wave field that runs along the whole outline
  *   (`WaveField`). Pointer motion near the edge ripples it, direction-aware (pushing toward / pulling
  *   away dents / lifts it, sliding along it launches a crest that travels the way the pointer went);
  *   an ambient travelling shimmer swells while the pointer is near; everything settles back to the
@@ -25,8 +24,9 @@
  *
  * DOM contract
  * - `dock.el`: append to the shadow root. position:fixed; right:0; top:50%; translateY(-50%).
- *   It is sized to the open footprint (72 × (312 + 2·40)) and is pointer-events:none except over ink.
- * - `dock.content`: absolutely positioned 72 × 312 box exactly over the tab. The UI fills it.
+ *   It is sized to the open footprint plus its inset ((72 + 16) × 298) and is pointer-events:none
+ *   except over ink. Both states float off the viewport's edge, each with its own drop shadow.
+ * - `dock.content`: absolutely positioned 72 × 298 box exactly over the tab. The UI fills it.
  *   Direct or nested children marked `[data-ink-item]` get the staggered entrance on open.
  *   Hidden (visibility:hidden, pointer-events:none) while closed.
  * - The drop (closed state) is owned by the dock: clicking it calls `open()` then `opts.onOpen`.
@@ -43,10 +43,10 @@ import { Choreo, shift } from "./ink/choreo";
 import { createGoo, type Goo } from "./ink/goo";
 import { approach, clamp, clamp01, easeOut3, fmt, fmt3, lerp, seeded, smooth, stepSpring } from "./ink/math";
 import { clock, docHidden, prefersReducedMotion, schedule, unschedule, type Ticker } from "./ink/scheduler";
-import { DROP, FILLET, INK_DROP, INK_LOADING, INK_WAVES, TAB_H, TAB_W } from "./ink/tuning";
+import { DROP, DROP_INSET, DROP_R, INK_DROP, INK_LOADING, INK_WAVES, TAB_H, TAB_INSET, TAB_R, TAB_W } from "./ink/tuning";
 import { hubAdd, hubRemove, inkCircle, inkOutlinePath, inkRoundRect, WaveField, type InkOutline, type WaveClient } from "./ink/wavefield";
 
-export { DROP, FILLET, INK_DROP, INK_LOADING, INK_WAVES, TAB_H, TAB_W } from "./ink/tuning";
+export { DROP, DROP_INSET, DROP_R, INK_DROP, INK_LOADING, INK_WAVES, TAB_H, TAB_INSET, TAB_R, TAB_W } from "./ink/tuning";
 export { inkShutdown, prefersReducedMotion } from "./ink/scheduler";
 export { inkCircle, inkOutlinePath, inkRoundRect, type InkArc, type InkLine, type InkOutline, type InkSeg } from "./ink/wavefield";
 
@@ -89,36 +89,36 @@ export interface Point {
 }
 
 /* ------------------------------------------------------------------------------------------------
- * Geometry (dock-local CSS px: origin = top-left of the 72 × 392 dock box; x = 72 is the viewport's
- * right edge)
+ * Geometry (dock-local CSS px: origin = top-left of the 88 × 298 dock box; the tab spans x 0 … 72,
+ * x = 88 is the viewport's right edge)
  * --------------------------------------------------------------------------------------------- */
 
-const DOCK_H = TAB_H + 2 * FILLET; // 392
-const AXIS_X = TAB_W - 36; // drop centre x == tool column axis (right − 36)
+const DOCK_W = TAB_W + TAB_INSET; // 88
+const DOCK_H = TAB_H; // 298
+const AXIS_X = TAB_W / 2; // the tab's (and tool column's) centre x
+const DROP_X = DOCK_W - DROP_INSET - DROP / 2; // the drop's centre x (50): it sits closer to the edge
 const MID_Y = DOCK_H / 2;
 const R_DROP = DROP / 2;
-const R_TAB = 36; // the tab's left radius
-const PAD = 48; // svg overdraw left / top / bottom (satellites, splash, waves, wobble)
-const EXT = 48; // ink continues past the viewport's right edge so the goo never erodes that edge
-const SVG_W = TAB_W + PAD + EXT;
+/** The drop's farthest reach from its centre (its corner arcs): the loading colour must cover it. */
+const DROP_REACH = (R_DROP - DROP_R) * Math.SQRT2 + DROP_R;
+const PAD = 48; // svg overdraw on every side (satellites, splash, waves, wobble)
+const SVG_W = DOCK_W + 2 * PAD;
 const SVG_H = DOCK_H + 2 * PAD;
-/** Fillet geometry, from corner-*.svg (40 × 40, ink in the corner next to the tab and the viewport
- * edge): a concave arc of radius 39.352 centred at (0.648, 39.352) of the asset box. */
-const F_R = 39.352;
-/** The asset's own path (corner-bottom.svg, verbatim): used for the fillets while they pour in. */
-const FILLET_D =
-  "M40 0V40H39.9922C39.9957 39.7844 40 39.568 40 39.3516C39.9998 17.6183 22.3818 0 0.648438 0C0.431865 0 0.215742 0.00432627 0 0.0078125V0H40Z";
-const SHADOW_A = 0.25; // closed drop: box-shadow 6px 6px 20px rgba(0,0,0,.25) …
-// … which as a CSS filter is drop-shadow(6px 6px 10px): Chromium treats drop-shadow's blur as the
-// Gaussian's standard deviation, i.e. twice as soft as the same box-shadow (verified against the render).
-const SHADOW_BLUR = 10;
+/** Drop shadows, from Figma. Closed drop: box-shadow 6px 6px 20px rgba(0,0,0,.25); open tab: 6px 12px
+ * 12px rgba(0,0,0,.2). As CSS filters Chromium treats drop-shadow's blur as the Gaussian's standard
+ * deviation, i.e. twice as soft as the same box-shadow (verified against the render), so blurs are halved. */
+const SHADOW_CLOSED = { y: 6, blur: 10, a: 0.25 };
+const SHADOW_OPEN = { y: 12, blur: 6, a: 0.2 };
+/** The same shadows as box-shadows (Figma's values), for the plain CSS fallbacks. */
+const DROP_BOX_SHADOW = "6px 6px 20px rgba(0,0,0,.25)";
+const TAB_BOX_SHADOW = "6px 12px 12px rgba(0,0,0,.2)";
 /** Ink modals: `--ink-shadow` (0 14px 36px .26, 0 2px 8px .16) as drop-shadows of the ink layer. */
 const SKIN_SHADOW = "drop-shadow(0 2px 4px rgba(0,0,0,.16)) drop-shadow(0 14px 18px rgba(0,0,0,.26))";
 
-/** Springs (unit mass). Open: ζ 0.74, ~2.5% overshoot, settles ≈ 540 ms. Close: ζ 0.52, a ~15%
- * undershoot that reads as a squash-and-wobble of the drop, settles ≈ 420 ms. */
-const SPRING_OPEN = { k: 200, c: 2 * 0.74 * Math.sqrt(200), thr: 0.004 };
-const SPRING_CLOSE = { k: 300, c: 2 * 0.52 * Math.sqrt(300), thr: 0.02 };
+/** Springs (unit mass). Open: ζ 0.74, ~2.5% overshoot (≈ 4 px of extra stretch), settles ≈ 500 ms.
+ * Close: ζ 0.55, a ~12% undershoot that reads as a squash-and-wobble of the drop, settles ≈ 420 ms. */
+const SPRING_OPEN = { k: 230, c: 2 * 0.74 * Math.sqrt(230), thr: 0.004 };
+const SPRING_CLOSE = { k: 300, c: 2 * 0.55 * Math.sqrt(300), thr: 0.02 };
 
 /** Content choreography (ms). */
 const ITEM_DELAY = 200; // ≈ 40% into the open morph
@@ -137,8 +137,6 @@ interface Geom {
   y1: number;
   rx: number;
   ry: number;
-  /** fillet scale 0..1 (from their joint at the viewport edge) */
-  s: number;
 }
 
 /**
@@ -150,21 +148,21 @@ function geomAt(p: number): Geom {
     const q = Math.min(-p, 0.5) * 0.55;
     const w = DROP * (1 + q);
     const h = DROP * (1 - q);
-    return { x0: AXIS_X - w / 2, x1: AXIS_X + w / 2, y0: MID_Y - h / 2, y1: MID_Y + h / 2, rx: w / 2, ry: h / 2, s: 0 };
+    const r = Math.min(DROP_R, w / 2, h / 2);
+    return { x0: DROP_X - w / 2, x1: DROP_X + w / 2, y0: MID_Y - h / 2, y1: MID_Y + h / 2, rx: r, ry: r };
   }
   const t = Math.min(p, 1);
   const o = Math.max(p - 1, 0);
-  // the drop slides right into the viewport edge …
-  const x1 = lerp(AXIS_X + R_DROP, TAB_W + EXT, smooth(t / 0.34));
-  // … its trailing side lags behind, then spreads back out to the tab's left edge …
-  const x0 = lerp(AXIS_X - R_DROP, 0, smooth((t - 0.12) / 0.88)) + 12 * Math.sin(Math.PI * clamp01(t / 0.7)) ** 2 - o * 26;
-  // … while it stretches vertically into the tab.
-  const h = lerp(DROP, TAB_H, smooth((t - 0.06) / 0.94)) + o * 170;
-  const cap = lerp(R_DROP, R_TAB, smooth(t / 0.6));
-  const w = x1 - x0;
-  // the fillets pour in from their joint at the edge as soon as the mass touches it
-  const s = Math.min(1.06, easeOut3((t - 0.18) / 0.82) + o * 1.5);
-  return { x0, x1, y0: MID_Y - h / 2, y1: MID_Y + h / 2, rx: Math.min(cap, w / 2), ry: Math.min(cap, h / 2), s };
+  // the drop drifts off the edge onto the tool column's axis …
+  const cx = lerp(DROP_X, AXIS_X, smooth(t / 0.55));
+  // … pulls up and down into a tall stroke first, thinning as it stretches like ink drawn out …
+  const h = lerp(DROP, TAB_H, smooth((t - 0.04) / 0.86)) + o * 170;
+  // … then fills out to the tab's width.
+  const w = lerp(DROP, TAB_W, smooth((t - 0.2) / 0.8)) - 12 * Math.sin(Math.PI * clamp01(t / 0.75)) ** 2 + o * 26;
+  // the corners open from the drop's 16 px to the tab's 24 px (capped while the stroke is thin: a pill)
+  const cap = lerp(DROP_R, TAB_R, smooth(t / 0.6));
+  const r = Math.min(cap, w / 2, h / 2);
+  return { x0: cx - w / 2, x1: cx + w / 2, y0: MID_Y - h / 2, y1: MID_Y + h / 2, rx: r, ry: r };
 }
 
 /** x of the body's left outline at height y. */
@@ -502,67 +500,30 @@ function buildSkin(host: HTMLElement, opts: InkSkinOptions): InkSkin {
  * Dock
  * --------------------------------------------------------------------------------------------- */
 
-/**
- * Rest outline of the open dock (dock-local px): the tab with its two concave fillets, continued
- * off-screen past the viewport's right edge (that stretch is `fixed`: an absorbing sponge for
- * ripples, and it covers the full 392 px height like the morph's own edge rect, so the two read the
- * same through the goo at the hand-off). The fillet arcs are the corner-*.svg geometry (radius
- * 39.352, centred 0.648 px inside the dock's top and bottom, 39.352 px left of the viewport edge).
- * The fillet circle and the tab's 36 px corner circle are 0.07 px apart; the outline hops between
- * them where they face each other, so it stays tangent-continuous (the exact union of the shapes
- * differs from this by < 0.1 px, a sliver at the joint).
- */
-function dockOutline(): InkOutline {
-  const X = TAB_W + EXT;
-  const fx = TAB_W - F_R; // fillet circles' centre x (32.648)
-  const yT = FILLET; // tab top (40)
-  const yB = FILLET + TAB_H; // tab bottom (352)
-  const fT = yT - F_R; // top fillet circle centre y (0.648)
-  const fB = yB + F_R; // bottom fillet circle centre y (391.352)
-  const cT = yT + R_TAB; // tab corner centres y (76, 316), x = 36
-  const cB = yB - R_TAB;
-  const j = Math.atan2(cT - fT, R_TAB - fx); // where the two circles face each other (≈ 87.45°)
-  const P = Math.PI;
+/** A rounded rect outline placed at (x, y) in dock-local px. */
+function roundRectAt(x: number, y: number, w: number, h: number, r: number): InkOutline {
   return {
-    segs: [
-      { kind: "line", x0: X, y0: 0, x1: TAB_W, y1: 0, fixed: true },
-      { kind: "line", x0: TAB_W, y0: 0, x1: TAB_W, y1: fT, fixed: true },
-      { kind: "arc", cx: fx, cy: fT, r: F_R, a0: 0, a1: j },
-      { kind: "arc", cx: R_TAB, cy: cT, r: R_TAB, a0: j - P, a1: -P },
-      { kind: "line", x0: 0, y0: cT, x1: 0, y1: cB },
-      { kind: "arc", cx: R_TAB, cy: cB, r: R_TAB, a0: P, a1: P - j },
-      { kind: "arc", cx: fx, cy: fB, r: F_R, a0: -j, a1: 0 },
-      { kind: "line", x0: TAB_W, y0: fB, x1: TAB_W, y1: DOCK_H, fixed: true },
-      { kind: "line", x0: TAB_W, y0: DOCK_H, x1: X, y1: DOCK_H, fixed: true },
-      { kind: "line", x0: X, y0: DOCK_H, x1: X, y1: 0, fixed: true },
-    ],
+    segs: inkRoundRect(w, h, r).segs.map((g) =>
+      g.kind === "line" ? { ...g, x0: g.x0 + x, y0: g.y0 + y, x1: g.x1 + x, y1: g.y1 + y } : { ...g, cx: g.cx + x, cy: g.cy + y }
+    ),
   };
 }
 
-/** The morph's ink shapes: body + fillets (+ edge patches), merged by the goo while they move. */
+/** Rest outline of the open dock (dock-local px): the floating tab. */
+const tabOutline = (): InkOutline => roundRectAt(0, 0, TAB_W, TAB_H, TAB_R);
+/** Rest outline of the closed dock: the drop's rounded square. */
+const dropOutline = (): InkOutline => roundRectAt(DROP_X - R_DROP, MID_Y - R_DROP, DROP, DROP, DROP_R);
+
+/** The morph's ink shape: one rounded rect, merged with the satellites and splash by the goo while it moves. */
 interface ShapeSet {
   g: SVGGElement;
-  ext: SVGRectElement;
   body: SVGRectElement;
-  fTop: SVGPathElement;
-  fBot: SVGPathElement;
-  seamTop: SVGRectElement;
-  seamBot: SVGRectElement;
 }
 
 function makeShapeSet(parent: Element): ShapeSet {
   const g = svgEl("g", {}, parent);
-  const ext = svgEl("rect", { fill: "#000" }, g);
   const body = svgEl("rect", { fill: "#000" }, g);
-  // the fillets, drawn from the corner asset's own path data (same 40 × 40 box, same transforms)
-  const fTop = svgEl("path", { d: FILLET_D, fill: "#000" }, g);
-  const fBot = svgEl("path", { d: FILLET_D, fill: "#000" }, g);
-  // 1.5 px patches across each fillet/tab joint (inside both shapes) so no anti-aliasing seam
-  // shows when the dock lands on a half pixel.
-  const seamTop = svgEl("rect", { fill: "#000" }, g);
-  const seamBot = svgEl("rect", { fill: "#000" }, g);
-  for (const n of [ext, seamTop, seamBot]) n.style.pointerEvents = "none";
-  return { g, ext, body, fTop, fBot, seamTop, seamBot };
+  return { g, body };
 }
 
 const setRect = (r: SVGRectElement, x: number, y: number, w: number, h: number, rx = 0, ry = 0): void => {
@@ -579,37 +540,21 @@ const show = (n: SVGElement, on: boolean): void => {
   if (n.style.display !== v) n.style.display = v;
 };
 
-function filletTransforms(g: Geom): { top: string; bot: string } {
-  const s = g.s;
-  const x = TAB_W - FILLET * s;
-  // top: the asset flipped vertically, its joint row on the tab's top edge
-  return {
-    top: `matrix(${fmt(s)} 0 0 ${fmt(-s)} ${fmt(x)} ${fmt(g.y0)})`,
-    bot: `matrix(${fmt(s)} 0 0 ${fmt(s)} ${fmt(x)} ${fmt(g.y1)})`,
-  };
-}
-
 function applyShapeSet(set: ShapeSet, g: Geom): void {
   show(set.body, true);
   setRect(set.body, g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0, g.rx, g.ry);
-  const on = g.s > 0.01;
-  show(set.fTop, on);
-  show(set.fBot, on);
-  show(set.ext, on);
-  show(set.seamTop, on);
-  show(set.seamBot, on);
-  if (!on) return;
-  const tf = filletTransforms(g);
-  set.fTop.setAttribute("transform", tf.top);
-  set.fBot.setAttribute("transform", tf.bot);
-  setRect(set.ext, TAB_W, g.y0 - FILLET * g.s, EXT, g.y1 - g.y0 + 2 * FILLET * g.s);
-  const sw = 30 * g.s;
-  setRect(set.seamTop, TAB_W - sw, g.y0 - 0.75, sw, 1.5);
-  setRect(set.seamBot, TAB_W - sw, g.y1 - 0.75, sw, 1.5);
 }
 
 function hideShapeSet(set: ShapeSet): void {
-  for (const n of [set.body, set.fTop, set.fBot, set.ext, set.seamTop, set.seamBot]) show(n, false);
+  show(set.body, false);
+}
+
+/** The dock's drop shadow for morph position p: the drop's, turning into the tab's as it opens. */
+function shadowAt(p: number): string {
+  const k = smooth(clamp01(p));
+  const C = SHADOW_CLOSED;
+  const O = SHADOW_OPEN;
+  return `drop-shadow(6px ${fmt(lerp(C.y, O.y, k))}px ${fmt(lerp(C.blur, O.blur, k))}px rgba(0,0,0,${lerp(C.a, O.a, k).toFixed(3)}))`;
 }
 
 /** Satellites: each flings out while the spring is fast inside its own window of p (so they detach
@@ -712,7 +657,7 @@ function createGooDock(opts: InkDockOptions): InkDock {
   el.className = "ink-dock";
   css(el, {
     position: "fixed", right: "0", top: "50%", transform: "translateY(-50%)",
-    width: `${TAB_W}px`, height: `${DOCK_H}px`, "pointer-events": "none", "z-index": "6",
+    width: `${DOCK_W}px`, height: `${DOCK_H}px`, "pointer-events": "none", "z-index": "6",
   });
 
   /* ---- svg: goo filter + shapes ---- */
@@ -727,7 +672,7 @@ function createGooDock(opts: InkDockOptions): InkDock {
   const gooF = createGoo(defs, `sumi-goo-${uid}`, { x: -PAD, y: -PAD, width: SVG_W, height: SVG_H });
 
   /* ---- loading: while Claude works the ink is filled with this pattern instead of plain black ---- */
-  const LR = R_DROP + INK_WAVES.clamp; // the drop's reach, waves included
+  const LR = DROP_REACH + INK_WAVES.clamp; // the drop's reach, waves included
   const pid = `sumi-paint-${uid}`;
   const paintPat = svgEl("pattern", { id: pid, patternUnits: "userSpaceOnUse", x: -PAD, y: -PAD, width: SVG_W, height: SVG_H }, defs);
   // a pattern's content is placed relative to its tile: shift it back into the svg's user space
@@ -739,12 +684,12 @@ function createGooDock(opts: InkDockOptions): InkDock {
   const lin = svgEl("linearGradient", { id: linId, gradientUnits: "userSpaceOnUse" }, defs);
   const linOffsets = [0, 0.21, 0.365, 0.52, 0.67, 0.82, 1];
   const linStops = linOffsets.map((o) => svgEl("stop", { offset: o }, lin));
-  svgEl("circle", { cx: AXIS_X, cy: MID_Y, r: LR + 14, fill: `url(#${linId})` }, colour);
+  svgEl("circle", { cx: DROP_X, cy: MID_Y, r: LR + 14, fill: `url(#${linId})` }, colour);
   const blobEls = INK_LOADING.blobs.map((_, i) => {
     const id = `sumi-blob${i}-${uid}`;
     const g = svgEl("radialGradient", { id }, defs);
     const stops = ([[0, 0.92], [0.5, 0.5], [1, 0]] as const).map(([o, a]) => svgEl("stop", { offset: o, "stop-opacity": a }, g));
-    return { c: svgEl("circle", { cx: AXIS_X, cy: MID_Y, r: 0, fill: `url(#${id})` }, colour), stops };
+    return { c: svgEl("circle", { cx: DROP_X, cy: MID_Y, r: 0, fill: `url(#${id})` }, colour), stops };
   });
   // the colour's front: a noisy, soft-edged blob while it blooms in / drains out, then a still soft disc
   // just past the drop's reach (splash droplets are colour near the drop, black ink farther out)
@@ -753,10 +698,10 @@ function createGooDock(opts: InkDockOptions): InkDock {
   svgEl("feGaussianBlur", { stdDeviation: INK_LOADING.frontSoft }, softF);
   const restR = LR + 8; // the still disc fades out between LR + 1 and LR + 8
   const fadeId = `sumi-fade-${uid}`;
-  const fadeG = svgEl("radialGradient", { id: fadeId, gradientUnits: "userSpaceOnUse", cx: AXIS_X, cy: MID_Y, r: restR }, defs);
+  const fadeG = svgEl("radialGradient", { id: fadeId, gradientUnits: "userSpaceOnUse", cx: DROP_X, cy: MID_Y, r: restR }, defs);
   svgEl("stop", { offset: fmt3((LR + 1) / restR), "stop-color": "#fff" }, fadeG);
   svgEl("stop", { offset: 1, "stop-color": "#fff", "stop-opacity": 0 }, fadeG);
-  const restFront = inkOutlinePath(inkCircle(AXIS_X, MID_Y, restR));
+  const restFront = inkOutlinePath(inkCircle(DROP_X, MID_Y, restR));
   const maskId = `sumi-front-${uid}`;
   const frontMask = svgEl("mask", { id: maskId, maskUnits: "userSpaceOnUse", x: -PAD, y: -PAD, width: SVG_W, height: SVG_H }, defs);
   const front = svgEl("path", { d: restFront, fill: `url(#${fadeId})` }, frontMask);
@@ -766,9 +711,9 @@ function createGooDock(opts: InkDockOptions): InkDock {
   ghost.g.style.pointerEvents = "none";
   ghost.g.style.display = "none";
   const main = makeShapeSet(svg);
-  // the ink blocks the page under it (the fillet paths are hit-tested on their ink only)
-  for (const n of [main.body, main.fTop, main.fBot]) n.style.pointerEvents = "fill";
-  // the resting surface: ONE procedural outline (open tab + fillets, or the drop) through the waves
+  // the ink blocks the page under it
+  main.body.style.pointerEvents = "fill";
+  // the resting surface: ONE procedural outline (open tab, or the drop) through the waves
   const wave = svgEl("path", { fill: "#000", d: "" }, main.g);
   wave.style.pointerEvents = "fill";
   wave.style.display = "none";
@@ -780,23 +725,23 @@ function createGooDock(opts: InkDockOptions): InkDock {
   const satEls = SATS.map(circle);
   const splashEls = [0, 1, 2, 3, 4].map(circle);
   // everything the goo draws takes the loading paint (the ghost crossfade stays plain black)
-  const paintable: SVGElement[] = [wave, main.body, main.fTop, main.fBot, main.ext, main.seamTop, main.seamBot, ...satEls, ...splashEls];
+  const paintable: SVGElement[] = [wave, main.body, ...satEls, ...splashEls];
 
   let openRest = "";
   let closedRest = "";
   let openField: WaveField | null = null;
   let closedField: WaveField | null = null;
   try {
-    openRest = inkOutlinePath(dockOutline());
-    closedRest = inkOutlinePath(inkCircle(AXIS_X, MID_Y, R_DROP));
+    openRest = inkOutlinePath(tabOutline());
+    closedRest = inkOutlinePath(dropOutline());
   } catch (e) {
     warn(e, "ink dock outline (resting on the morph shapes)");
     openRest = closedRest = "";
   }
   try {
     if (openRest) {
-      openField = new WaveField(dockOutline());
-      closedField = new WaveField(inkCircle(AXIS_X, MID_Y, R_DROP));
+      openField = new WaveField(tabOutline());
+      closedField = new WaveField(dropOutline());
     }
   } catch (e) {
     warn(e, "ink dock waves (static outline)");
@@ -809,8 +754,7 @@ function createGooDock(opts: InkDockOptions): InkDock {
   // the radius only shapes hit-testing of the (transparent) box: the page stays clickable just
   // outside the tab's rounded corners, while overflowing UI children (tooltips) are not clipped
   css(content, {
-    position: "absolute", right: "0", top: `${FILLET}px`, width: `${TAB_W}px`, height: `${TAB_H}px`,
-    "border-radius": `${R_TAB}px 0 0 ${R_TAB}px`,
+    position: "absolute", left: "0", top: "0", width: `${TAB_W}px`, height: `${TAB_H}px`, "border-radius": `${TAB_R}px`,
   });
 
   const drop = document.createElement("button");
@@ -818,8 +762,8 @@ function createGooDock(opts: InkDockOptions): InkDock {
   drop.className = "ink-drop";
   drop.setAttribute("aria-label", "Open Sumi");
   css(drop, {
-    position: "absolute", left: `${AXIS_X - R_DROP}px`, top: `${MID_Y - R_DROP}px`, width: `${DROP}px`, height: `${DROP}px`,
-    margin: "0", padding: "0", border: "0", "border-radius": "50%", background: "transparent",
+    position: "absolute", left: `${DROP_X - R_DROP}px`, top: `${MID_Y - R_DROP}px`, width: `${DROP}px`, height: `${DROP}px`,
+    margin: "0", padding: "0", border: "0", "border-radius": `${DROP_R}px`, background: "transparent",
     display: "grid", "place-items": "center", cursor: "pointer", "pointer-events": "auto",
   });
   const dropImg = icon(opts.dropIcon);
@@ -861,7 +805,7 @@ function createGooDock(opts: InkDockOptions): InkDock {
   let reopenAt = -1; // ink clock ms, −1 = not scheduled
   let fromSend = false; // the next bloom wells up where Send sat
   /** colour coverage k (0 black ink … 1 full colour), tweening from → to; front origin and noise phases */
-  const tint = { k: 0, from: 0, to: 0, t0: 0, dur: 1, ox: AXIS_X, oy: MID_Y, ph: [0, 0, 0, 0] };
+  const tint = { k: 0, from: 0, to: 0, t0: 0, dur: 1, ox: DROP_X, oy: MID_Y, ph: [0, 0, 0, 0] };
   let rippleDue = 0; // a ripple (px) waiting for the drop's resting surface
   let bloomRippled = false;
   let drainSplashed = false;
@@ -1009,9 +953,9 @@ function createGooDock(opts: InkDockOptions): InkDock {
     // the gradient line spans the drop's box along its direction (like CSS / Figma linear gradients)
     const ca = Math.cos(a) * R_DROP * 1.3;
     const sa = Math.sin(a) * R_DROP * 1.3;
-    attr(lin, "x1", fmt(AXIS_X - ca));
+    attr(lin, "x1", fmt(DROP_X - ca));
     attr(lin, "y1", fmt(MID_Y - sa));
-    attr(lin, "x2", fmt(AXIS_X + ca));
+    attr(lin, "x2", fmt(DROP_X + ca));
     attr(lin, "y2", fmt(MID_Y + sa));
     const span = Math.max(0.01, L.spanTo - L.spanFrom);
     linStops.forEach((n, i) => set(n, col(hue + L.hueSpan * clamp01((linOffsets[i] - L.spanFrom) / span))));
@@ -1023,7 +967,7 @@ function createGooDock(opts: InkDockOptions): InkDock {
       const d = L.blobDelay[i] ?? 0;
       const e = reduced ? 1 : easeOut3(clamp01((k - d) / Math.max(0.05, 1 - d)));
       const th = B.phase + (2 * Math.PI * s) / (B.period || 1);
-      const px = AXIS_X + B.dx + B.rx * Math.cos(th);
+      const px = DROP_X + B.dx + B.rx * Math.cos(th);
       const py = MID_Y + B.dy + B.ry * Math.sin(1.37 * th + B.phase);
       attr(el.c, "cx", fmt(lerp(tint.ox, px, e)));
       attr(el.c, "cy", fmt(lerp(tint.oy, py, e)));
@@ -1043,10 +987,10 @@ function createGooDock(opts: InkDockOptions): InkDock {
     put(colour, "opacity", isOpen ? fmt(k) : "");
     const amp = L.frontNoise * (1 + 0.8 * (1 - k));
     const m = smooth(k);
-    const ox = lerp(tint.ox, AXIS_X, m);
+    const ox = lerp(tint.ox, DROP_X, m);
     const oy = lerp(tint.oy, MID_Y, m);
     // radius at k = 1: just past the drop's edge as it ripples while loading (the still disc takes over there)
-    const cover = (R_DROP + 4 + Math.hypot(ox - AXIS_X, oy - MID_Y)) / (1 - Math.min(0.5, amp));
+    const cover = (DROP_REACH + 4 + Math.hypot(ox - DROP_X, oy - MID_Y)) / (1 - Math.min(0.5, amp));
     attr(front, "d", blobPath(ox, oy, Math.max(0.01, k * cover), amp, tint.ph, (t - tint.t0) / 1000));
     attr(front, "fill", "#fff");
     attr(front, "filter", `url(#${softId})`);
@@ -1159,9 +1103,8 @@ function createGooDock(opts: InkDockOptions): InkDock {
 
     setGoo(goo, wob, tSec);
 
-    // closed-state drop shadow (fades out as it opens)
-    const shadowK = fade ? lerp(1 - smooth(fade.from / 0.5), 1 - smooth(fade.to / 0.5), clamp01((t - fade.start) / REDUCED_MS)) : 1 - smooth(p / 0.5);
-    const sc = shadowK > 0.005 ? `drop-shadow(6px 6px ${SHADOW_BLUR}px rgba(0,0,0,${(SHADOW_A * shadowK).toFixed(3)}))` : "none";
+    // drop shadow: the drop's, turning into the floating tab's as it opens
+    const sc = shadowAt(fade ? lerp(fade.from, fade.to, clamp01((t - fade.start) / REDUCED_MS)) : p);
     if (sc !== shadowCss) {
       shadowCss = sc;
       svg.style.filter = sc;
@@ -1170,12 +1113,11 @@ function createGooDock(opts: InkDockOptions): InkDock {
     // while morphing, the UI's content is clipped to the ink so icons never float outside it
     let clip = "";
     if (spring.active && contentPhase !== "idle") {
-      const top = Math.max(0, g.y0 - FILLET);
-      const bottom = Math.max(0, FILLET + TAB_H - g.y1);
+      const top = Math.max(0, g.y0);
+      const bottom = Math.max(0, TAB_H - g.y1);
       const left = Math.max(0, g.x0);
       const right = Math.max(0, TAB_W - g.x1);
-      const rr = g.x1 < TAB_W ? g.rx : 0;
-      clip = `inset(${fmt(top)}px ${fmt(right)}px ${fmt(bottom)}px ${fmt(left)}px round ${fmt(g.rx)}px ${fmt(rr)}px ${fmt(rr)}px ${fmt(g.rx)}px / ${fmt(g.ry)}px ${fmt(rr ? g.ry : 0)}px ${fmt(rr ? g.ry : 0)}px ${fmt(g.ry)}px)`;
+      clip = `inset(${fmt(top)}px ${fmt(right)}px ${fmt(bottom)}px ${fmt(left)}px round ${fmt(g.rx)}px)`;
     }
     if (clip !== contentClip) {
       contentClip = clip;
@@ -1184,9 +1126,9 @@ function createGooDock(opts: InkDockOptions): InkDock {
 
     // drop button + icon ride on the drop and fade as it opens
     const iconK = fade ? lerp(fade.from <= 0 ? 1 : 0, fade.to <= 0 ? 1 : 0, clamp01((t - fade.start) / REDUCED_MS)) : 1 - smooth(p / 0.3);
-    const vx = (Math.max(g.x0, -20) + Math.min(g.x1, TAB_W)) / 2;
+    const vx = (g.x0 + g.x1) / 2;
     const vy = (g.y0 + g.y1) / 2;
-    put(drop, "transform", fade ? "" : `translate(${fmt(vx - AXIS_X)}px, ${fmt(vy - MID_Y)}px)`);
+    put(drop, "transform", fade ? "" : `translate(${fmt(vx - DROP_X)}px, ${fmt(vy - MID_Y)}px)`);
     renderIcons(iconK, reduced);
     const btnVisible = !isOpen || iconK > 0.01;
     put(drop, "visibility", btnVisible ? "visible" : "hidden");
@@ -1271,7 +1213,7 @@ function createGooDock(opts: InkDockOptions): InkDock {
       if (want) {
         if (tint.k < 0.05) {
           // a fresh bloom: where it wells up, the noise of its front, and the ink it throws off
-          tint.ox = AXIS_X;
+          tint.ox = DROP_X;
           tint.oy = MID_Y + (fromSend ? L.originDy : 0);
           tint.ph = [0, 1, 2, 3].map(() => rnd() * Math.PI * 2);
           bloomRippled = false;
@@ -1311,7 +1253,7 @@ function createGooDock(opts: InkDockOptions): InkDock {
       return;
     }
     if (restField() !== f) return;
-    const poke = (a: number, amount: number): void => f.poke(AXIS_X + Math.cos(a) * R_DROP, MID_Y + Math.sin(a) * R_DROP, amount);
+    const poke = (a: number, amount: number): void => f.poke(DROP_X + Math.cos(a) * R_DROP, MID_Y + Math.sin(a) * R_DROP, amount);
     if (rippleDue) {
       const a0 = rnd() * Math.PI * 2;
       for (let i = 0; i < 3; i++) poke(a0 + (i * 2 * Math.PI) / 3, rippleDue);
@@ -1476,7 +1418,7 @@ function createGooDock(opts: InkDockOptions): InkDock {
       svg.style.display = "none";
       const ink = plainInk();
       el.insertBefore(ink, content);
-      css(drop, { background: "#000", "box-shadow": "6px 6px 20px rgba(0,0,0,.25)", transform: "", visibility: "visible" });
+      css(drop, { background: "#000", "box-shadow": DROP_BOX_SHADOW, transform: "", visibility: "visible" });
       dropImg.style.opacity = "";
       spinAnim = spinCss(dropImg, false, spinAnim);
       plain = { ink };
@@ -1741,27 +1683,14 @@ function createGooDock(opts: InkDockOptions): InkDock {
   return dock;
 }
 
-/** Static ink of the open dock for the fallbacks: the procedural outline as one path, or a CSS tab. */
+/** Static ink of the open dock for the fallbacks: the floating tab as a CSS box. */
 function plainInk(): Element {
-  try {
-    const s = svgEl("svg", {
-      viewBox: `0 0 ${TAB_W + EXT} ${DOCK_H}`, width: TAB_W + EXT, height: DOCK_H, "aria-hidden": "true", focusable: "false",
-    });
-    css(s, {
-      position: "absolute", left: "0", top: "0", width: `${TAB_W + EXT}px`, height: `${DOCK_H}px`,
-      overflow: "hidden", display: "block", "pointer-events": "none",
-    });
-    const p = svgEl("path", { d: inkOutlinePath(dockOutline()), fill: "#000" }, s);
-    p.style.pointerEvents = "fill";
-    return s;
-  } catch {
-    const tab = document.createElement("div");
-    css(tab, {
-      position: "absolute", right: "0", top: `${FILLET}px`, width: `${TAB_W}px`, height: `${TAB_H}px`,
-      background: "#000", "border-radius": "36px 0 0 36px", "pointer-events": "auto",
-    });
-    return tab;
-  }
+  const tab = document.createElement("div");
+  css(tab, {
+    position: "absolute", left: "0", top: "0", width: `${TAB_W}px`, height: `${TAB_H}px`,
+    background: "#000", "border-radius": `${TAB_R}px`, "box-shadow": TAB_BOX_SHADOW, "pointer-events": "auto",
+  });
+  return tab;
 }
 
 /** The plain dock: used when the SVG renderer cannot be built (no motion). */
@@ -1770,22 +1699,22 @@ function createPlainDock(opts: InkDockOptions): InkDock {
   el.className = "ink-dock";
   css(el, {
     position: "fixed", right: "0", top: "50%", transform: "translateY(-50%)",
-    width: `${TAB_W}px`, height: `${TAB_H + 2 * FILLET}px`, "pointer-events": "none", "z-index": "6",
+    width: `${DOCK_W}px`, height: `${DOCK_H}px`, "pointer-events": "none", "z-index": "6",
   });
 
   const ink = plainInk() as HTMLElement;
 
   const content = document.createElement("div");
   content.className = "ink-content";
-  css(content, { position: "absolute", right: "0", top: `${FILLET}px`, width: `${TAB_W}px`, height: `${TAB_H}px` });
+  css(content, { position: "absolute", left: "0", top: "0", width: `${TAB_W}px`, height: `${TAB_H}px` });
 
   const drop = document.createElement("button");
   drop.type = "button";
   drop.className = "ink-drop";
   drop.setAttribute("aria-label", "Open Sumi");
   css(drop, {
-    position: "absolute", right: "10px", top: "50%", width: `${DROP}px`, height: `${DROP}px`, margin: `-${DROP / 2}px 0 0`,
-    "border-radius": "50%", background: "#000", "box-shadow": "6px 6px 20px rgba(0,0,0,.25)", border: "0",
+    position: "absolute", right: `${DROP_INSET}px`, top: "50%", width: `${DROP}px`, height: `${DROP}px`, margin: `-${DROP / 2}px 0 0`,
+    "border-radius": `${DROP_R}px`, background: "#000", "box-shadow": DROP_BOX_SHADOW, border: "0",
     display: "grid", "place-items": "center", cursor: "pointer", "pointer-events": "auto",
   });
   const dropImg = icon(opts.dropIcon);
